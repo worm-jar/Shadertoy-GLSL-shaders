@@ -1,0 +1,414 @@
+vec2 eyePos = vec2(0.0f);
+vec2 smallEyePos = vec2(0.5f);
+int maxSteps = 100;
+bool showEye = false;
+bool showInnerEye = false;
+bool smallShowEye = false;
+bool smallShowInnerEye = false;
+vec2 gridSize = vec2(0.25f,0.15f);
+
+//Random
+
+float random(vec2 uv) {
+    return fract(sin(dot(uv.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+//Noise
+
+float noise(vec2 uv) {
+    vec2 cellID = floor(uv*20.0f);
+    
+    float a = random(cellID + vec2(0.0, 0.0));
+    float b = random(cellID + vec2(10.0, 0.0));
+    float c = random(cellID + vec2(0.0, 10.0));
+    float d = random(cellID + vec2(10.0, 10.0));
+    
+    return mix(mix(a, b, 4000.0f), mix(c, d, 4000.0f),4000.0f);
+}
+
+//SDFs from https://iquilezles.org/
+
+float sdEllipse( in vec2 p, in vec2 ab )
+{
+    p = abs(p); if( p.x > p.y ) {p=p.yx;ab=ab.yx;}
+    float l = ab.y*ab.y - ab.x*ab.x;
+    float m = ab.x*p.x/l;      float m2 = m*m; 
+    float n = ab.y*p.y/l;      float n2 = n*n; 
+    float c = (m2+n2-1.0)/3.0; float c3 = c*c*c;
+    float q = c3 + m2*n2*2.0;
+    float d = c3 + m2*n2;
+    float g = m + m*n2;
+    float co;
+    if( d<0.0 )
+    {
+        float h = acos(q/c3)/3.0;
+        float s = cos(h);
+        float t = sin(h)*sqrt(3.0);
+        float rx = sqrt( -c*(s + t + 2.0) + m2 );
+        float ry = sqrt( -c*(s - t + 2.0) + m2 );
+        co = (ry+sign(l)*rx+abs(g)/(rx*ry)- m)/2.0;
+    }
+    else
+    {
+        float h = 2.0*m*n*sqrt( d );
+        float s = sign(q+h)*pow(abs(q+h), 1.0/3.0);
+        float u = sign(q-h)*pow(abs(q-h), 1.0/3.0);
+        float rx = -s - u - c*4.0 + 2.0*m2;
+        float ry = (s - u)*sqrt(3.0);
+        float rm = sqrt( rx*rx + ry*ry );
+        co = (ry/sqrt(rm-rx)+2.0*g/rm-m)/2.0;
+    }
+    vec2 r = ab * vec2(co, sqrt(1.0-co*co));
+    return length(r-p) * sign(p.y-r.y);
+}
+
+float sdCircle( vec2 p, float r )
+{
+    return length(p) - r;
+}
+
+//Ray marching
+
+float rayMarchCenter(vec2 eyePos, vec2 ro, vec2 rd, out int signSDF[4])
+{
+
+    vec2 movement1 = vec2(clamp(cos(iTime), -0.12f, 0.12f), 0.0f);
+    vec2 movement2 = vec2(clamp(cos(iTime), -0.16f, 0.16f), 0.0f);
+    float blinking = clamp(abs(sin(iTime)*10.0f)/10.0f+0.005f, 0.01f, 0.1f);
+    float totalDist = 0.0f;
+    int[4] currentSDF = int[4](0,1,2,3);
+    
+    for(int i = 0; i < maxSteps; i++)
+    {
+        vec2 posEllipse = ro + rd * totalDist;
+        
+        vec2 transfrom1 = posEllipse - movement1;
+        vec2 transfrom2 = posEllipse - movement2;
+        
+        float minDist0 = sdEllipse(posEllipse, vec2(0.26f, blinking+0.01f));
+        float minDist1 = sdEllipse(posEllipse, vec2(0.25f, blinking));
+        float minDist2 = sdCircle(transfrom1, 0.08f);
+        float minDist3 = sdCircle(transfrom2, 0.02f);
+        
+        if(minDist2 < minDist1)
+        {
+            showEye == false;
+        }
+        else
+        {
+            showEye == true;
+        }
+        
+        if(minDist3 < minDist1)
+        {
+            showInnerEye == false;
+        }
+        else
+        {
+            showInnerEye == true;
+        }
+        
+        float minDistX = min(minDist0, minDist1);
+        float minDistY = min(minDistX, minDist2);
+        float minDistZ = min(minDistY, minDist3);
+        
+        //Shape1
+        
+        if(minDist1 > 0.0f)
+        {
+             currentSDF[1] = 1;
+        }
+        else if(minDist1 < 0.0f)
+        {
+             currentSDF[1] = -1;
+        }
+        else
+        {
+             currentSDF[1] = 0;
+        }
+        
+        //Shape2
+        
+        if(minDist2 > 0.0f)
+        {
+             currentSDF[2] = 1;
+        }
+        else if(minDist2 < 0.0f)
+        {
+             currentSDF[2] = -1;
+        }
+        else
+        {
+             currentSDF[2] = 0;
+        }
+        
+        //Shape0
+        
+        if(minDist0 > 0.0f)
+        {
+             currentSDF[0] = 1;
+        }
+        else if(minDist0 < 0.0f)
+        {
+             currentSDF[0] = -1;
+        }
+        else
+        {
+             currentSDF[0] = 0;
+        }
+        
+        //Shape3
+        
+        if(minDist3 > 0.0f)
+        {
+             currentSDF[3] = 1;
+        }
+        else if(minDist3 < 0.0f)
+        {
+             currentSDF[3] = -1;
+        }
+        else
+        {
+             currentSDF[3] = 0;
+        }
+        
+        totalDist += minDistZ;
+        
+        if(totalDist > 100.0f)
+        {
+            return 0.0f;
+        }
+        if(minDistZ < 0.8f)
+        {
+            signSDF[1] = currentSDF[1];
+            signSDF[2] = currentSDF[2];
+            signSDF[0] = currentSDF[0];
+            signSDF[3] = currentSDF[3];
+            return totalDist;
+        }
+    }
+    return 0.0f;
+}
+
+float rayMarchScatter(vec2 ro, vec2 rd, out int signSDF[4], in float randomTime)
+{
+    vec2 movement1 = vec2(clamp(cos(iTime*randomTime+randomTime), -0.12f, 0.12f), 0.0f)/4.0f;
+    vec2 movement2 = vec2(clamp(cos(iTime*randomTime+randomTime), -0.16f, 0.16f), 0.0f)/4.0f;
+    float blinking = clamp(abs(sin(iTime*randomTime+randomTime)*10.0f)/10.0f+0.005f, 0.01f, 0.1f)/1.5f;
+    float totalDist = 0.0f;
+    int[4] currentSDF = int[4](0,1,2,3);
+    
+    for(int i = 0; i < maxSteps; i++)
+    {
+        vec2 posEllipse = ro + rd * totalDist;
+        
+        vec2 transfrom1 = posEllipse - movement1;
+        vec2 transfrom2 = posEllipse - movement2;
+        
+        float minDist0 = sdEllipse(posEllipse, vec2(0.26f, blinking+0.01f)/4.0f);
+        float minDist1 = sdEllipse(posEllipse, vec2(0.25f, blinking)/4.0f);
+        float minDist2 = sdCircle(transfrom1, 0.04f)/8.0f;
+        float minDist3 = sdCircle(transfrom2, 0.01f)/8.0f;
+        
+        
+        if(minDist2 < minDist1)
+        {
+            smallShowEye == false;
+        }
+        else
+        {
+            smallShowEye == true;
+        }
+        
+        if(minDist3 < minDist1)
+        {
+            smallShowInnerEye == false;
+        }
+        else
+        {
+            smallShowInnerEye == true;
+        }
+        
+        float minDistX = min(minDist0, minDist1);
+        float minDistY = min(minDistX, minDist2);
+        float minDistZ = min(minDistY, minDist3);
+        
+        //Shape1
+        
+        if(minDist1 > 0.0f)
+        {
+             currentSDF[1] = 1;
+        }
+        else if(minDist1 < 0.0f)
+        {
+             currentSDF[1] = -1;
+        }
+        else
+        {
+             currentSDF[1] = 0;
+        }
+        
+        //Shape2
+        
+        if(minDist2 > 0.0f)
+        {
+             currentSDF[2] = 1;
+        }
+        else if(minDist2 < 0.0f)
+        {
+             currentSDF[2] = -1;
+        }
+        else
+        {
+             currentSDF[2] = 0;
+        }
+        
+        //Shape0
+        
+        if(minDist0 > 0.0f)
+        {
+             currentSDF[0] = 1;
+        }
+        else if(minDist0 < 0.0f)
+        {
+             currentSDF[0] = -1;
+        }
+        else
+        {
+             currentSDF[0] = 0;
+        }
+        
+        //Shape3
+        
+        if(minDist3 > 0.0f)
+        {
+             currentSDF[3] = 1;
+        }
+        else if(minDist3 < 0.0f)
+        {
+             currentSDF[3] = -1;
+        }
+        else
+        {
+             currentSDF[3] = 0;
+        }
+        
+        totalDist += minDistZ;
+        
+        if(totalDist > 100.0f)
+        {
+            return 0.0f;
+        }
+        if(minDistZ < 0.8f)
+        {
+            signSDF[1] = currentSDF[1];
+            signSDF[2] = currentSDF[2];
+            signSDF[0] = currentSDF[0];
+            signSDF[3] = currentSDF[3];
+            return totalDist;
+        }
+    }
+    return 0.0f;
+}
+
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    vec2 uv = (fragCoord - 0.5f * iResolution.xy) / iResolution.y;
+    vec2 uvScatter = mod(uv, gridSize);
+    uvScatter -= 0.125f;
+    
+    vec2 cellID = floor((uv - uvScatter) / gridSize + 0.5f);
+    float randomTime = random(cellID);
+    vec2 randomPos;
+    
+    randomPos.x = mod(random(cellID), gridSize.x);
+    randomPos.y = mod(random(cellID), gridSize.y);
+    
+    int signSDF[4];
+    int smallSignSDF[4];
+
+    float[] ellipseCheck = float[](rayMarchCenter(eyePos, uv, normalize(eyePos-uv), signSDF));
+    
+    vec3 smoothDark = smoothstep(vec3(0.0f), vec3(1.0f), vec3(sin((iTime)+1.0f)/cos((iTime)+1.0f)));
+
+    for(int i = 0; i < 4; i++)
+    {
+         ellipseCheck[i] = rayMarchCenter(eyePos, uv, normalize(eyePos-uv), signSDF);
+    }
+    
+    float[] smallEllipseCheck = float[](rayMarchScatter(uvScatter+randomPos/3.0f, normalize(smallEyePos-uv), smallSignSDF, randomTime));
+
+    for(int i = 0; i < 4; i++)
+    {
+         smallEllipseCheck[i] = rayMarchScatter(uvScatter+randomPos/3.0f, normalize(smallEyePos-uvScatter), smallSignSDF, randomTime);
+    }
+    
+    fragColor = mix(vec4(noise(uv * 200.0 * sin(randomTime)), smoothDark.x/6.0f, 0.0, 1.0), vec4(0.0, 0.0, noise(uv * 200.0 * sin(randomTime)), 1.0), sin(iTime * 40.0 * sin(iTime/200.0f)));
+    
+
+    
+    //Render scatter eyes
+    
+    if(smallEllipseCheck[1,2,3,0] != 0.0f)
+    {
+
+       if(smallSignSDF[1] == -1)
+       {
+           fragColor = vec4(1.0,1.0,1.0,1.0);
+       }
+       if(smallSignSDF[2] == -1 && smallSignSDF[1] == -1)
+       {
+           fragColor = vec4(0.1,0.1,0.1,1.0);
+       }
+       if(smallSignSDF[0] == -1 && smallSignSDF[1] == 1)
+       {
+           fragColor = vec4(0.0,0.0,0.0,1.0);
+       }
+       if(smallSignSDF[1] - smallSignSDF[2] > 0 && smallShowEye == true)
+       {
+           fragColor = vec4(0.1,0.1,0.1,1.0);
+       }
+ 
+       if(smallSignSDF[3] == -1)
+       {
+            fragColor = vec4(0.0,0.0,0.0,1.0);
+       }
+       if(smallSignSDF[1] - smallSignSDF[2] > 0 && smallShowInnerEye == true)
+       {
+           fragColor = vec4(0.1,0.1,0.1,1.0);
+       }
+    }
+     //Render middle eye
+    
+    if(ellipseCheck[1,2,3,0] != 0.0f)
+    {
+
+       if(signSDF[1] == -1)
+       {
+           fragColor = vec4(1.0,1.0,1.0,1.0);
+       }
+       if(signSDF[2] == -1 && signSDF[1] == -1)
+       {
+           fragColor = vec4(0.1,0.1,0.1,1.0);
+       }
+       if(signSDF[0] == -1 && signSDF[1] == 1)
+       {
+           fragColor = vec4(0.0,0.0,0.0,1.0);
+       }
+       if(signSDF[1] - signSDF[2] > 0 && showEye == true)
+       {
+           fragColor = vec4(0.1,0.1,0.1,1.0);
+       }
+ 
+       if(signSDF[3] == -1)
+       {
+            fragColor = vec4(0.0,0.0,0.0,1.0);
+       }
+       if(signSDF[1] - signSDF[2] > 0 && showInnerEye == true)
+       {
+           fragColor = vec4(0.1,0.1,0.1,1.0);
+       }
+    }
+
+}
