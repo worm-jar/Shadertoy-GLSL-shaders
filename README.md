@@ -15,3 +15,13 @@ I used typical math equations to animate the movement of the ball, along with th
 [capture (2).webm](https://github.com/user-attachments/assets/d98548c9-a23e-497a-9771-c0f86a6049c8)
 
 I used modular arithmetic and vector algebra to create a space with twinkling stars and big yellow stars that randomly move and grow/shrink. 
+
+## 👀I Spy With My Massive Eye
+
+[capture (3).webm](https://github.com/user-attachments/assets/2f601f85-2029-4753-b0a9-73c38f0fc0f4)
+
+This was mostly me playing with randomness and noise for the first time.
+
+
+
+
