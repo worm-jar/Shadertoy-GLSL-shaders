@@ -1,0 +1,179 @@
+int maxSteps = 100;
+float timeSpan;
+float timer;
+vec3 rayDir;
+vec3 rayDirLight;
+vec3 camPos;
+vec3 lightPos;
+vec3 radius;
+vec3 lightDir;
+vec3 positionShape;
+vec3 positionLight;
+vec3 spherePos;
+vec3 lightColorBall = vec3(1.0,0.0,1.0);
+vec3 lightColorFloor = vec3(1.0,1.0,0.0);
+vec3 lightColorAmbient = vec3(0.2,0.0,0.0);
+vec3 diffuse = vec3(2.0, 2.0, 2.0);
+float farPlane;
+
+
+//SDFs from https://iquilezles.org/
+
+float sdSphere( vec3 p, vec3 spherePos, vec3 r )
+{
+  float k0 = length((p-spherePos)/r);
+  float k1 = length((p-spherePos)/(r*r));
+  return k0*(k0-1.0)/k1;
+}
+
+float sdPlane( vec3 p, vec3 n, float h )
+{
+  return dot(p,n) + h;
+}
+
+//Getting normal
+vec3 getNormalsSphere(vec3 uv3D, vec3 spherePos)
+{
+  return normalize(uv3D - spherePos);
+}
+//Lighting
+float lambert(vec3 normal, vec3 dir)
+{
+  return clamp(dot(normal, dir), 0.0, 1.0);
+}
+float phong(vec3 normal, vec3 lightDir, vec3 camDir)
+{
+    vec3 r = reflect(normal, lightDir);
+    return dot(r, - camDir);
+}
+//Shadows Calc
+float Shadows()
+{
+    float totalDepth = 0.2f;
+    rayDirLight = normalize(lightPos-positionShape);
+    float lightDistance = length(lightPos-positionShape);
+    
+    for(int i = 0; i < maxSteps; i++)
+    {
+        positionLight = positionShape + rayDirLight * totalDepth;
+        
+        float distance = min(sdSphere(positionLight, spherePos, radius), sdPlane(positionLight, vec3(0.0,1.0,0.0), 0.5f));
+        
+        
+        totalDepth += distance;
+              
+
+        if(distance<0.01f||totalDepth > 10000.0f)
+        {
+             return 0.0f;
+        }
+        else if (distance > lightDistance)
+        {
+             break;
+        }
+    }
+    return 1.0f;
+}  
+
+
+
+void mainImage( out vec4 fragColor, in vec2 fragCoord )
+{
+    // Normalized pixel coordinates (from 0 to 1)
+    vec2 uv = (fragCoord - 0.5f * iResolution.xy) / iResolution.y;
+    vec3 uv3D = vec3(uv, 1.0f);
+    uv3D = fract(uv3D);
+    
+    //Calculation ball physics
+    
+    timeSpan = 6.0f;
+    timer = mod((iTime*2.0f)/clamp(pow(iTime+1.0f, 2.718f), 0.5f, 1.5f), timeSpan);
+    float damping = exp(-0.35f * timer);
+    
+    spherePos = vec3(timer*6.0f-12.0f, (abs(sin(2.0f*timer/2.0f-0.5*9.18*timer/2.0f*timer/2.0f)+0.2f)*6.0f)*damping, timer*2.0f);
+    
+    if(timer < 5.4f)
+    {
+        camPos = vec3(0.0f,spherePos.y/3.0f+1.5f,-10.0f);
+    }
+    else
+    {
+        camPos = vec3(0.0f,1.5f,-10.0f);
+    }
+    
+    lightPos= vec3(1.0f, 10.0f, spherePos.z);
+
+    //Squish sphere
+    
+    float squishY = (abs(sin(2.0f*timer/2.0f-0.5*9.18*timer/2.0f*timer/2.0f)+0.2f)+1.5f)/2.0f;
+    
+    float unsquashXZ = 1.0f/squishY;
+    
+    vec3 scale = vec3(unsquashXZ, squishY, unsquashXZ);
+    
+    radius = scale;
+    
+    rayDir = normalize(vec3(uv, 1.0));;
+
+    float total = 0.0f;
+   
+    float distanceSphere = 0.0f;
+    float distanceFloor = 0.0f;
+    
+   
+    //Ray marching shape
+    for(int i = 0; i < maxSteps; i++)
+    {
+        positionShape = camPos + rayDir * total;
+        
+        float distance = min(sdSphere(positionShape, spherePos, radius), sdPlane(positionShape, vec3(0.0,1.0,0.0), 0.5f));
+        
+        total += distance;
+        
+        lightDir = normalize(lightPos - positionShape);
+        
+
+        if(distance<0.01f||total > 100.0f)
+        {
+             break;
+        }
+    }
+
+    
+    //Final rendering
+    if(total < 80.0f)
+    {
+    
+        vec3 ambientLight = 0.25f*lightColorAmbient;
+      
+        distanceSphere = sdSphere(positionShape, spherePos, radius);
+        distanceFloor = sdPlane(positionShape, vec3(0.0,1.0,0.0), 0.5f);
+        
+        float lightingSphere = lambert(getNormalsSphere(camPos + rayDir * total, spherePos), lightDir);
+        float lightingPhongSphere = phong(getNormalsSphere(camPos + rayDir * total, spherePos), lightDir, normalize(positionShape - camPos))*0.1;
+
+
+        float lightingPlane = lambert(vec3(0.0,1.0,0.0), lightDir);
+        float lightingPhongPlane = phong(vec3(0.0,1.0,0.0), lightDir, normalize(positionShape - camPos))*0.1;
+        
+        float lightingPhongSphereExp = pow(lightingPhongSphere, 5.0f);
+        float lightingPhongPlaneExp = pow(lightingPhongPlane, 5.0f);
+         
+        if(distanceSphere<distanceFloor)
+        {
+        fragColor = vec4(((lightingSphere+ambientLight)+lightingPhongSphereExp)*Shadows(), 1.0);
+        }
+        else if(distanceSphere>distanceFloor)
+        {
+        fragColor = vec4(((lightingPlane+ambientLight)*lightColorFloor+lightingPhongPlaneExp)*Shadows(), 1.0);
+        }
+        else
+        {
+        fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+        }
+    }
+    else
+    {
+        fragColor = vec4(0.0, 0.06, 1.0, 1.0);
+    }
+}
